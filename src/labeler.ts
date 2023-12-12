@@ -14,6 +14,7 @@ import {checkAnyBranch, checkAllBranch} from './branch';
 type ClientType = ReturnType<typeof github.getOctokit>;
 
 // GitHub Issues cannot have more than 100 labels
+
 const GITHUB_MAX_LABELS = 100;
 
 export const run = () =>
