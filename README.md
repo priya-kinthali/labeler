@@ -4,6 +4,13 @@
 
 Automatically label new pull requests based on the paths of files being changed or the branch name.
 
+## Breaking changes in V6
+
+- Upgraded action from node20 to node24.
+  > Make sure your runner is on version v2.327.1 or later to ensure compatibility with this release. [Release Notes](https://github.com/actions/runner/releases/tag/v2.327.1)
+
+For more details, see the full release notes on the [release page](https://github.com/actions/labeler/releases/tag/v6.0.0)
+
 ## Breaking changes in V5
 1) The ability to apply labels based on the names of base and/or head branches was added ([#186](https://github.com/actions/labeler/issues/186) and [#54](https://github.com/actions/labeler/issues/54)). The match object for changed files was expanded with new combinations in order to make it more intuitive and flexible ([#423](https://github.com/actions/labeler/issues/423) and [#101](https://github.com/actions/labeler/issues/101)). As a result, the configuration file structure was significantly redesigned and is not compatible with the structure of the previous version. Please read the documentation below to find out how to adapt your configuration files for use with the new action version.
 
@@ -12,6 +19,9 @@ Automatically label new pull requests based on the paths of files being changed 
 3) By default, `dot` input is set to `true`. Now, paths starting with a dot (e.g. `.github`) are matched by default.
 
 4) Version 5 of this action updated the [runtime to Node.js 20](https://docs.github.com/en/actions/creating-actions/metadata-syntax-for-github-actions#runs-for-javascript-actions). All scripts are now run with Node.js 20 instead of Node.js 16 and are affected by any breaking changes between Node.js 16 and 20.
+
+> [!IMPORTANT]
+> Before the update to the v5, please check out [this information](#notes-regarding-pull_request_target-event) about the `pull_request_target` event trigger.
 
 ## Usage
 
@@ -110,6 +120,18 @@ Documentation:
 - changed-files:
   - any-glob-to-any-file: docs/*
 
+# Add 'Documentation' label to any file changes within 'docs' or 'guides' folders
+Documentation:
+- changed-files:
+  - any-glob-to-any-file:
+    - docs/*
+    - guides/*
+
+## Equivalent of the above mentioned configuration using another syntax
+Documentation:
+- changed-files:
+  - any-glob-to-any-file: ['docs/*', 'guides/*']
+
 # Add 'Documentation' label to any change to .md files within the entire repository 
 Documentation:
 - changed-files:
@@ -126,14 +148,14 @@ source:
 feature:
  - head-branch: ['^feature', 'feature']
 
- # Add 'release' label to any PR that is opened against the `main` branch
+# Add 'release' label to any PR that is opened against the `main` branch
 release:
  - base-branch: 'main'
 ```
 
 ### Create Workflow
 
-Create a workflow (e.g. `.github/workflows/labeler.yml` see [Creating a Workflow file](https://help.github.com/en/articles/configuring-a-workflow#creating-a-workflow-file)) to utilize the labeler action with content:
+Create a workflow (e.g. `.github/workflows/labeler.yml` see [Creating a Workflow file](https://docs.github.com/en/actions/writing-workflows/quickstart#creating-your-first-workflow)) to utilize the labeler action with content:
 
 ```yml
 name: "Pull Request Labeler"
@@ -147,7 +169,7 @@ jobs:
       pull-requests: write
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/labeler@v5
+    - uses: actions/labeler@v6
 ```
 
 #### Inputs
@@ -167,10 +189,10 @@ You might want to use action called [@actions/checkout](https://github.com/actio
 
 ```yml
     steps:
-    - uses: actions/checkout@v4 # Uploads repository content to the runner
+    - uses: actions/checkout@v5 # Uploads repository content to the runner
       with:
         repository: "owner/repositoryName" # The one of the available inputs, visit https://github.com/actions/checkout#readme to find more
-    - uses: actions/labeler@v5
+    - uses: actions/labeler@v6
       with:
         configuration-path: 'path/to/the/uploaded/configuration/file'
 
@@ -193,7 +215,7 @@ jobs:
     steps:
     
     # Label PRs 1, 2, and 3
-    - uses: actions/labeler@v5
+    - uses: actions/labeler@v6
       with:        
         pr-number: |
           1
@@ -226,7 +248,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - id: label-the-PR
-      uses: actions/labeler@v5
+      uses: actions/labeler@v6
       
     - id: run-frontend-tests
       if: contains(steps.label-the-PR.outputs.all-labels, 'frontend')
@@ -241,10 +263,59 @@ jobs:
         # Put your commands for running backend tests here
 ```
 
-## Permissions
+## Recommended Permissions
 
-In order to add labels to pull requests, the GitHub labeler action requires write permissions on the pull-request. However, when the action runs on a pull request from a forked repository, GitHub only grants read access tokens for `pull_request` events, at most. If you encounter an `Error: HttpError: Resource not accessible by integration`, it's likely due to these permission constraints. To resolve this issue, you can modify the `on:` section of your workflow to use
-[`pull_request_target`](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) instead of `pull_request` (see example [above](#create-workflow)). This change allows the action to have write access, because `pull_request_target` alters the [context of the action](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) and safely grants additional permissions. Refer to the [GitHub token permissions documentation](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token) for more details about access levels and event contexts.
+To successfully add labels to pull requests using the GitHub Labeler Action, specific permissions must be granted based on your use case:
+
+1. **Adding Existing Labels**:
+   - Requires: `pull-requests: write`
+   - Use this if all labels already exist in the repository (i.e., pre-defined in `.github/labeler.yml`).
+
+2. **Creating New Labels**:
+   - Requires: `issues: write`
+   - This is necessary if the action needs to create labels that do not already exist in the repository.
+
+However, when the action runs on a pull request from a forked repository, GitHub only grants read access tokens for `pull_request` events, at most. If you encounter an `Error: HttpError: Resource not accessible by integration`, it's likely due to these permission constraints. To resolve this issue, you can modify the `on:` section of your workflow to use
+[`pull_request_target`](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) instead of `pull_request` (see example [above](#create-workflow)). This change allows the action to have write access, because `pull_request_target` alters the [context of the action](https://docs.github.com/en/actions/using-workflows/events-that-trigger-workflows#pull_request_target) and safely grants additional permissions.
+
+There exists a potentially dangerous misuse of the `pull_request_target` workflow trigger that may lead to malicious PR authors (i.e. attackers) being able to obtain repository write permissions or stealing repository secrets. Hence, it is advisable that `pull_request_target` should only be used in workflows that are carefully designed to avoid executing untrusted code and to also ensure that workflows using `pull_request_target` limit access to sensitive resources. Refer to the [GitHub token permissions documentation](https://docs.github.com/en/actions/security-guides/automatic-token-authentication#permissions-for-the-github_token) for more details about access levels and event contexts.
+
+### Example Workflow Permissions
+
+To ensure the action works correctly, include the following permissions in your workflow file:
+
+```yml
+    permissions:
+      contents: read
+      pull-requests: write
+      issues: write
+```
+
+### Manual Label Creation as an Alternative to Granting issues write Permission 
+
+If you prefer not to grant the `issues: write` permission in your workflow, you can manually create all required labels in the repository before the action runs.
+
+## Notes regarding `pull_request_target` event
+
+Using the `pull_request_target` event trigger involves several peculiarities related to initial set up of the labeler or updating version of the labeler.
+
+### Initial set up of the labeler action
+
+When submitting an initial pull request to a repository using the `pull_request_target` event, the labeler workflow will not run on that pull request because the `pull_request_target` execution runs off the base branch instead of the pull request's branch. Unfortunately this means the introduction of the labeler can not be verified during that pull request and it needs to be committed blindly.
+
+### Updating major version of the labeler
+
+When submitting a pull request that includes updates of the labeler action version and associated configuration files, using the `pull_request_target` event may result in a failed workflow. This is due to the nature of `pull_request_target`, which uses the code from the base branch rather than the branch linked to the pull request — so, potentially outdated configuration files may not be compatible with the updated labeler action.
+
+To prevent this issue, you can switch to using the `pull_request` event temporarily, before merging. This event execution draws from the code within the branch of your pull request, allowing you to verify the new configuration's compatibility with the updated labeler action.
+
+```yml
+name: "Pull Request Labeler"
+on:
+- pull_request
+```
+
+Once you confirm that the updated configuration files function as intended, you can then revert to using the `pull_request_target` event before merging the pull request. Following this step ensures that your workflow is robust and free from disruptions.
 
 ## Contributions
 

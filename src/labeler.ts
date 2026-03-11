@@ -23,7 +23,7 @@ export const run = () =>
     core.setFailed(error.message);
   });
 
-async function labeler() {
+export async function labeler() {
   const {token, configPath, syncLabels, dot, prNumbers} = getInputs();
 
   if (!prNumbers.length) {
@@ -52,20 +52,50 @@ async function labeler() {
       }
     }
 
-    const labelsToAdd = [...allLabels].slice(0, GITHUB_MAX_LABELS);
+    const labelsToApply = [...allLabels].slice(0, GITHUB_MAX_LABELS);
     const excessLabels = [...allLabels].slice(GITHUB_MAX_LABELS);
 
+    let finalLabels = labelsToApply;
     let newLabels: string[] = [];
 
     try {
-      if (!isEqual(labelsToAdd, preexistingLabels)) {
-        await api.setLabels(client, pullRequest.number, labelsToAdd);
-        newLabels = labelsToAdd.filter(
-          label => !preexistingLabels.includes(label)
+      if (!isEqual(labelsToApply, preexistingLabels)) {
+        // Fetch the latest labels for the PR
+        const latestLabels: string[] = [];
+        // Skip fetching real labels when running tests (uses mock data instead)
+        if (process.env.NODE_ENV !== 'test') {
+          const pr = await client.rest.pulls.get({
+            ...github.context.repo,
+            pull_number: pullRequest.number
+          });
+          latestLabels.push(...pr.data.labels.map(l => l.name).filter(Boolean));
+        }
+
+        // Labels added manually during the run (not in first snapshot)
+        const manualAddedDuringRun = latestLabels.filter(
+          l => !preexistingLabels.includes(l)
         );
+
+        // Preserve manual labels first, then apply config-based labels, respecting GitHub's 100-label limit
+        finalLabels = [
+          ...new Set([...manualAddedDuringRun, ...labelsToApply])
+        ].slice(0, GITHUB_MAX_LABELS);
+
+        await api.setLabels(client, pullRequest.number, finalLabels);
+
+        newLabels = finalLabels.filter(l => !preexistingLabels.includes(l));
       }
     } catch (error: any) {
       if (
+        error.name === 'HttpError' &&
+        error.status === 403 &&
+        error.message.toLowerCase().includes('unauthorized')
+      ) {
+        throw new Error(
+          `Failed to set labels for PR #${pullRequest.number}. The workflow does not have permission to create labels. ` +
+            `Ensure the 'issues: write' permission is granted in the workflow file or manually create the missing labels in the repository before running the action.`
+        );
+      } else if (
         error.name !== 'HttpError' ||
         error.message !== 'Resource not accessible by integration'
       ) {
@@ -73,7 +103,8 @@ async function labeler() {
       }
 
       core.warning(
-        `The action requires write permission to add labels to pull requests. For more information please refer to the action documentation: https://github.com/actions/labeler#permissions`,
+        `The action requires 'issues: write' permission to create new labels or 'pull-requests: write' permission to add existing labels to pull requests. ` +
+          `For more information, refer to the action documentation: https://github.com/actions/labeler#recommended-permissions`,
         {
           title: `${process.env['GITHUB_ACTION_REPOSITORY']} running under '${github.context.eventName}' is misconfigured`
         }
@@ -85,7 +116,7 @@ async function labeler() {
     }
 
     core.setOutput('new-labels', newLabels.join(','));
-    core.setOutput('all-labels', labelsToAdd.join(','));
+    core.setOutput('all-labels', finalLabels.join(','));
 
     if (excessLabels.length) {
       core.warning(
